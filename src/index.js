@@ -396,6 +396,7 @@ function blameChangedAt(repo, revision, baseRef, extensions, binary, filter) {
   let aiLines = 0;
   let totalLines = 0;
   const rows = [];
+  const attributions = [];
   for (const file of changedFiles(repo, revision, baseRef, extensions)) {
     if (git(repo, ['cat-file', '-e', `${revision}:${file}`], { allowFailure: true }).status !== 0) continue;
     const blamed = execute(binary, ['blame', file, '--commit', revision, '--json', '--filter', filter, '--repo', repo], { allowFailure: true });
@@ -408,22 +409,39 @@ function blameChangedAt(repo, revision, baseRef, extensions, binary, filter) {
     aiLines += ai;
     totalLines += total;
     if (ai) rows.push(`| \`${file}\` | ${ai} / ${total} |`);
+    for (const count of Array.isArray(item.chatCounts) ? item.chatCounts : []) {
+      const lines = Number(count.lineCount || 0);
+      if (!count.chatId || lines <= 0) continue;
+      attributions.push({
+        chatId: String(count.chatId),
+        providerName: count.providerName || '',
+        model: count.model || '',
+        lines,
+      });
+    }
   }
-  return { aiLines, totalLines, rows };
+  return { aiLines, totalLines, rows, attributions };
 }
 
-function agentTable(repo, notesRef, commits) {
-  const totals = new Map();
+function agentTable(repo, notesRef, commits, attributions) {
+  const sourceByChat = new Map();
   for (const commit of commits) {
     const trace = readTrace(repo, notesRef, commit);
     for (const file of trace?.files || []) {
       for (const conversation of file.conversations || []) {
-        if (!conversation.url && !conversation.agent) continue;
-        const lines = (conversation.ranges || []).reduce((sum, range) => sum + Number(range.end_line || 0) - Number(range.start_line || 0) + 1, 0);
+        if (!conversation.url) continue;
         const key = `${conversation.agent || '?'}\t${conversation.contributor?.model_id || '-'}`;
-        totals.set(key, (totals.get(key) || 0) + lines);
+        if (!sourceByChat.has(String(conversation.url))) sourceByChat.set(String(conversation.url), key);
       }
     }
+  }
+
+  const totals = new Map();
+  for (const attribution of attributions) {
+    const key = attribution.providerName
+      ? `${attribution.providerName}\t${attribution.model || '-'}`
+      : sourceByChat.get(attribution.chatId) || '?\t-';
+    totals.set(key, (totals.get(key) || 0) + attribution.lines);
   }
   if (!totals.size) return '';
   const rows = [...totals.entries()].map(([key, lines]) => ({ key, lines })).sort((a, b) => b.lines - a.lines);
@@ -534,7 +552,7 @@ async function runPrReport(repo, event, config, binary) {
       '',
       `**${factual.aiLines} of ${factual.totalLines}** lines in changed files are AI-attributed (${percent}%), from trace notes on **${coverage}** branch commits.`,
       factual.rows.length ? `\n| file | AI lines |\n|---|---|\n${factual.rows.join('\n')}` : '',
-      agentTable(repo, config.notesRef, branch),
+      agentTable(repo, config.notesRef, branch, factual.attributions),
       '',
     ].join('\n');
     setOutput('ai-lines', factual.aiLines);
@@ -552,7 +570,7 @@ async function runPrReport(repo, event, config, binary) {
             const percentPrediction = blamed.totalLines ? Math.floor((100 * blamed.aiLines) / blamed.totalLines) : 0;
             report += `\n#### Preview of GitHub's test merge (not published)\n\nComputed on temporary test-merge commit \`${mergeSha.slice(0, 10)}\`: **${blamed.aiLines} of ${blamed.totalLines}** lines (${percentPrediction}%).\n`;
             if (blamed.rows.length) report += `\n| file | AI lines |\n|---|---|\n${blamed.rows.join('\n')}\n`;
-            report += agentTable(repo, config.notesRef, [mergeSha]);
+            report += agentTable(repo, config.notesRef, [mergeSha], blamed.attributions);
             setOutput('predicted-ai-lines', blamed.aiLines);
           } else {
             log('prediction compute failed; the factual section stands alone');

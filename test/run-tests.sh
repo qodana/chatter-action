@@ -80,7 +80,9 @@ configure_repo() {
 # independent of local agent transcripts while covering that real transport shape.
 static_note() {
     local revision=$1
-    printf '{"version":"0.1","id":"static-e2e","timestamp":"2026-07-15T00:00:00Z","vcs":{"type":"git","revision":"%s"},"tool":{"name":"e2e","version":"1"},"files":[{"path":"app.txt","conversations":[{"url":"CHAT:static-e2e","agent":"claude","contributor":{"type":"ai","model_id":"e2e-model"},"ranges":[{"start_line":3,"end_line":3}]}]}],"metadata":null}' "$revision"
+    local start_line=${2:-3}
+    local end_line=${3:-$start_line}
+    printf '{"version":"0.1","id":"static-e2e","timestamp":"2026-07-15T00:00:00Z","vcs":{"type":"git","revision":"%s"},"tool":{"name":"e2e","version":"1"},"files":[{"path":"app.txt","conversations":[{"url":"CHAT:static-e2e","agent":"claude","contributor":{"type":"ai","model_id":"e2e-model"},"ranges":[{"start_line":%s,"end_line":%s}]}]}],"metadata":null}' "$revision" "$start_line" "$end_line"
 }
 
 echo '=== installer hook publishes a branch trace ==='
@@ -105,19 +107,27 @@ test -x "$PRODUCER/.git/hooks/post-commit" || fail "post-commit hook was not ins
 test -x "$PRODUCER/.git/hooks/pre-push" || fail "pre-push hook was not installed"
 
 producer_git checkout -qb feature
-printf 'human line one\nhuman line two\nagent contribution line\n' > "$PRODUCER/app.txt"
+printf 'human line one\nhuman line two\nagent contribution line one\n' > "$PRODUCER/app.txt"
 producer_git add app.txt
-producer_git commit -qm 'agent change'
-FEATURE=$(producer_git rev-parse HEAD)
+producer_git commit -qm 'agent change one'
+FEATURE_FIRST=$(producer_git rev-parse HEAD)
 test -f "$PRODUCER_HOME/.chatter/logs/hooks.log" \
     || fail "post-commit hook did not invoke the observer"
-SOURCE_NOTE=$(static_note "$FEATURE")
+SOURCE_NOTE_FIRST=$(static_note "$FEATURE_FIRST" 3 4)
+printf '%s\n' "$SOURCE_NOTE_FIRST" | producer_git notes --ref=refs/notes/chatter add -F - "$FEATURE_FIRST"
+printf 'agent contribution line two\n' >> "$PRODUCER/app.txt"
+producer_git add app.txt
+producer_git commit -qm 'agent change two'
+FEATURE=$(producer_git rev-parse HEAD)
+SOURCE_NOTE=$(static_note "$FEATURE" 4 4)
 printf '%s\n' "$SOURCE_NOTE" | producer_git notes --ref=refs/notes/chatter add -F - "$FEATURE"
 
 # The ordinary branch push invokes the installed pre-push hook. The hook must
 # publish refs/notes/chatter in addition to the branch/refspecs requested here.
 producer_git push -qu origin feature 'feature:refs/pull/1/head'
+REMOTE_SOURCE_NOTE_FIRST=$(git --git-dir="$ORIGIN" notes --ref=refs/notes/chatter show "$FEATURE_FIRST")
 REMOTE_SOURCE_NOTE=$(git --git-dir="$ORIGIN" notes --ref=refs/notes/chatter show "$FEATURE")
+assert_eq "$SOURCE_NOTE_FIRST" "$REMOTE_SOURCE_NOTE_FIRST" "pre-push hook did not publish the first branch note"
 assert_eq "$SOURCE_NOTE" "$REMOTE_SOURCE_NOTE" "pre-push hook did not publish the branch note"
 
 echo '=== bundled action reports branch attribution ==='
@@ -140,8 +150,8 @@ EOF
         GITHUB_API_URL="$CHECK_API_URL" INPUT_GITHUB_TOKEN=check-test-token \
         node "$ROOT/dist/index.js"
 )
-grep -Fxq 'notes-coverage=1/1' "$tmp/pr-output" || fail "pr mode did not read the branch note"
-grep -Fxq 'ai-lines=1' "$tmp/pr-output" || fail "pr mode did not report attribution"
+grep -Fxq 'notes-coverage=2/2' "$tmp/pr-output" || fail "pr mode did not read both branch notes"
+grep -Fxq 'ai-lines=2' "$tmp/pr-output" || fail "pr mode did not report exact attribution"
 case "$(git -C "$PR_RUNNER" notes --ref=refs/notes/chatter show "$FEATURE")" in
     chatter:gzip:*) ;;
     *) fail "pr mode did not normalize the fetched plain note for the pinned binary" ;;
@@ -165,6 +175,9 @@ if printf '%s' "$check_record" | jq -r '.body.output.summary' | grep -Fq "Previe
 fi
 if ! printf '%s' "$comment_record" | jq -r '.body.body' | grep -Fq 'chatter: agent attribution of this branch'; then
     fail "PR comment did not retain the factual attribution report"
+fi
+if ! printf '%s' "$comment_record" | jq -r '.body.body' | grep -Fq '| claude | e2e-model | 2 |'; then
+    fail "PR comment did not use final blame lines for agent totals"
 fi
 
 echo '=== action computes and publishes the landed trace ==='
@@ -196,7 +209,7 @@ EOF
 test -x "$tmp/action-runner-temp/chatter-action/bin/chatter" \
     || fail "bundled action did not install its binary through install.sh --bin-only"
 grep -Fxq 'computed-commits=1' "$tmp/action-output" || fail "action did not compute a landed note"
-grep -Fxq 'notes-coverage=1/1' "$tmp/action-output" || fail "action did not read the branch note"
+grep -Fxq 'notes-coverage=2/2' "$tmp/action-output" || fail "action did not read both branch notes"
 MAPPED_NOTE=$(git --git-dir="$ORIGIN" notes --ref=refs/notes/chatter show "$SQUASH")
 case "$MAPPED_NOTE" in chatter:gzip:*) ;; *) fail "action did not push a compressed landed note" ;; esac
 
@@ -223,7 +236,7 @@ if git -C "$CONSUMER" show-ref --verify --quiet refs/notes/chatter; then
 fi
 blame_json=$(HOME="$CONSUMER_HOME" CHATTER_HOME="$CONSUMER_HOME/.chatter" \
     "$BIN" blame app.txt --commit "$SQUASH" --online --json --filter rollout --repo "$CONSUMER")
-assert_eq 1 "$(printf '%s' "$blame_json" | jq -r '.[0].attributedLines // 0')" "online blame attribution"
+assert_eq 2 "$(printf '%s' "$blame_json" | jq -r '.[0].attributedLines // 0')" "online blame attribution"
 git -C "$CONSUMER" show-ref --verify --quiet refs/notes/chatter \
     || fail "blame --online did not fetch refs/notes/chatter"
 
