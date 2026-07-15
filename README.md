@@ -3,8 +3,9 @@
 This is a bundled `node20` GitHub Action for carrying Chatter attribution from
 developer-published notes into pull requests and landed commits.
 
-- On an open pull request it reports factual attribution from real branch notes,
-  with an optional prediction for GitHub's test-merge commit.
+- On an open pull request it reports factual attribution from real branch notes.
+  An opt-in diagnostic preview can additionally evaluate GitHub's temporary
+  test-merge commit; it is disabled by default and never published.
 - After a squash or rebase merge it maps authored commits to landed commits, runs
   `chatter compute`, and publishes the resulting trace note.
 
@@ -48,7 +49,7 @@ whose rulesets restrict non-branch refs must allow the workflow token to push
 | `notes-ref` | derived | Optional confirmation of the filter-selected notes ref |
 | `comment` | `true` | Update a sticky PR report |
 | `github-token` | `${{ github.token }}` | Token used for the optional PR report comment |
-| `predict` | `true` | Include an explicitly labeled test-merge prediction |
+| `predict` | `false` | Opt-in diagnostic preview of GitHub's temporary test merge; never published |
 | `push-notes` | `true` | Push computed notes in mainline mode |
 | `extensions` | empty | Comma-separated extension filter for PR reports |
 

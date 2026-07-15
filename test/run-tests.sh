@@ -119,11 +119,14 @@ EOF
         GITHUB_EVENT_NAME=pull_request GITHUB_EVENT_PATH="$tmp/pr-event.json" \
         GITHUB_OUTPUT="$tmp/pr-output" GITHUB_STEP_SUMMARY="$tmp/pr-summary.md" \
         GITHUB_ACTION_PATH="$ROOT" RUNNER_TEMP="$tmp/pr-runner-temp" \
-        INPUT_COMMENT=false INPUT_PREDICT=false \
+        INPUT_COMMENT=false \
         node "$ROOT/dist/index.js"
 )
 grep -Fxq 'notes-coverage=1/1' "$tmp/pr-output" || fail "pr mode did not read the branch note"
 grep -Fxq 'ai-lines=1' "$tmp/pr-output" || fail "pr mode did not report attribution"
+if grep -Fq "Preview of GitHub's test merge" "$tmp/pr-summary.md"; then
+    fail "test-merge preview must be opt-in"
+fi
 
 echo '=== action computes and publishes the landed trace ==='
 producer_git checkout -q main

@@ -109,7 +109,7 @@ function loadConfig() {
     baseUrl: getInput('base-url', ''),
     comment: booleanInput('comment', true),
     githubToken: getInput('github-token', ''),
-    predict: booleanInput('predict', true),
+    predict: booleanInput('predict', false),
     pushNotes: booleanInput('push-notes', true),
     extensions: getInput('extensions', ''),
   };
@@ -449,7 +449,7 @@ async function runPrReport(repo, event, config, binary) {
           if (predicted.status === 0) {
             const blamed = blameChangedAt(repo, mergeSha, baseRef, config.extensions, binary, config.filter);
             const percentPrediction = blamed.totalLines ? Math.floor((100 * blamed.aiLines) / blamed.totalLines) : 0;
-            report += `\n#### Prediction (not history)\n\nComputed on GitHub's test-merge commit \`${mergeSha.slice(0, 10)}\`: **${blamed.aiLines} of ${blamed.totalLines}** lines (${percentPrediction}%). Nothing from this preview is published.\n`;
+            report += `\n#### Preview of GitHub's test merge (not published)\n\nComputed on temporary test-merge commit \`${mergeSha.slice(0, 10)}\`: **${blamed.aiLines} of ${blamed.totalLines}** lines (${percentPrediction}%).\n`;
             if (blamed.rows.length) report += `\n| file | AI lines |\n|---|---|\n${blamed.rows.join('\n')}\n`;
             report += agentTable(repo, config.notesRef, [mergeSha]);
             setOutput('predicted-ai-lines', blamed.aiLines);
