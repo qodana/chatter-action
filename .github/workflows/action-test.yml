@@ -1,0 +1,29 @@
+name: Chatter action e2e
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'action.yml'
+      - 'scripts/**'
+      - 'install.sh'
+      - 'uninstall.sh'
+      - 'test/**'
+      - '.github/workflows/action-test.yml'
+  workflow_dispatch:
+
+# The test uses only local temporary bare repositories. It never writes to this
+# repository or to GitHub refs, so the job token needs no write permission.
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: release-37 hook → action → online blame
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run end-to-end release test
+        run: bash test/run-tests.sh
