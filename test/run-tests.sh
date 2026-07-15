@@ -3,7 +3,7 @@
 #
 # It deliberately uses the CDN-pinned binary rather than a locally built CLI:
 #
-#   branch commit + static gzip note
+#   branch commit + static JSON note
 #     -> installer pre-push hook publishes that note
 #     -> action computes/pushes a note for the squash commit
 #     -> fresh clone obtains attribution through `blame --online`.
@@ -26,7 +26,7 @@ assert_eq() {
     [ "$1" = "$2" ] || fail "$3 (expected '$1', got '$2')"
 }
 
-for tool in git jq gzip base64; do
+for tool in git jq; do
     command -v "$tool" >/dev/null 2>&1 || fail "$tool is required"
 done
 
@@ -76,12 +76,11 @@ configure_repo() {
     git -C "$1" config user.email "chatter-e2e@example.test"
 }
 
-# The release's on-ref transport is exactly chatter:gzip:<base64(gzip(JSON))>.
-# A static payload keeps this e2e independent of local agent transcripts.
+# Hooks can publish a direct JSON trace note. A static payload keeps this e2e
+# independent of local agent transcripts while covering that real transport shape.
 static_note() {
     local revision=$1
-    printf '{"version":"0.1","id":"static-e2e","timestamp":"2026-07-15T00:00:00Z","vcs":{"type":"git","revision":"%s"},"tool":{"name":"e2e","version":"1"},"files":[{"path":"app.txt","conversations":[{"url":"CHAT:static-e2e","agent":"claude","contributor":{"type":"ai","model_id":"e2e-model"},"ranges":[{"start_line":3,"end_line":3}]}]}],"metadata":null}' "$revision" \
-        | gzip -c | base64 | tr -d '\n' | sed 's/^/chatter:gzip:/'
+    printf '{"version":"0.1","id":"static-e2e","timestamp":"2026-07-15T00:00:00Z","vcs":{"type":"git","revision":"%s"},"tool":{"name":"e2e","version":"1"},"files":[{"path":"app.txt","conversations":[{"url":"CHAT:static-e2e","agent":"claude","contributor":{"type":"ai","model_id":"e2e-model"},"ranges":[{"start_line":3,"end_line":3}]}]}],"metadata":null}' "$revision"
 }
 
 echo '=== installer hook publishes a branch trace ==='
@@ -143,6 +142,12 @@ EOF
 )
 grep -Fxq 'notes-coverage=1/1' "$tmp/pr-output" || fail "pr mode did not read the branch note"
 grep -Fxq 'ai-lines=1' "$tmp/pr-output" || fail "pr mode did not report attribution"
+case "$(git -C "$PR_RUNNER" notes --ref=refs/notes/chatter show "$FEATURE")" in
+    chatter:gzip:*) ;;
+    *) fail "pr mode did not normalize the fetched plain note for the pinned binary" ;;
+esac
+assert_eq "$SOURCE_NOTE" "$(git --git-dir="$ORIGIN" notes --ref=refs/notes/chatter show "$FEATURE")" \
+    "pr mode must not publish its local note normalization"
 if grep -Fq "Preview of GitHub's test merge" "$tmp/pr-summary.md"; then
     fail "test-merge preview must be opt-in"
 fi

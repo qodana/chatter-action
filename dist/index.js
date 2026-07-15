@@ -211,23 +211,69 @@ function installBinary(config) {
 
 function fetchNotes(repo, notesRef) {
   const result = git(repo, ['fetch', '--no-tags', 'origin', `+${notesRef}:${notesRef}`], { allowFailure: true });
-  if (result.status !== 0) log(`no ${notesRef} on origin yet`);
+  if (result.status !== 0) {
+    log(`no ${notesRef} on origin yet`);
+    return 0;
+  }
+  return normalizeFetchedNotes(repo, notesRef);
+}
+
+function parseTrace(raw) {
+  let json = raw;
+  if (raw.startsWith(TRACE_PREFIX)) {
+    if (Buffer.byteLength(raw) > MAX_ENCODED_NOTE_BYTES) return null;
+    const compressed = Buffer.from(raw.slice(TRACE_PREFIX.length), 'base64');
+    const decoded = zlib.gunzipSync(compressed, { maxOutputLength: MAX_DECODED_NOTE_BYTES + 1 });
+    if (decoded.length > MAX_DECODED_NOTE_BYTES) return null;
+    json = decoded.toString('utf8');
+  } else if (Buffer.byteLength(raw) > MAX_DECODED_NOTE_BYTES) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(json);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function encodeTrace(trace) {
+  return `${TRACE_PREFIX}${zlib.gzipSync(Buffer.from(JSON.stringify(trace))).toString('base64')}`;
+}
+
+function normalizeFetchedNotes(repo, notesRef) {
+  let normalized = 0;
+  for (const entry of gitLines(repo, ['notes', '--ref', notesRef, 'list'])) {
+    const commit = entry.trim().split(/\s+/)[1];
+    if (!commit) continue;
+    const note = git(repo, ['notes', '--ref', notesRef, 'show', commit], { allowFailure: true });
+    if (note.status !== 0) continue;
+    const raw = note.stdout.trim();
+    if (raw.startsWith(TRACE_PREFIX)) continue;
+    const trace = parseTrace(raw);
+    if (!trace) continue;
+    const encoded = encodeTrace(trace);
+    if (Buffer.byteLength(encoded) > MAX_ENCODED_NOTE_BYTES) {
+      warn(`cannot normalize oversized plain trace note for ${commit.slice(0, 10)}`);
+      continue;
+    }
+    const written = git(repo, ['notes', '--ref', notesRef, 'add', '-f', '-F', '-', commit], {
+      input: `${encoded}\n`,
+      allowFailure: true,
+    });
+    if (written.status !== 0) {
+      warn(`cannot normalize plain trace note for ${commit.slice(0, 10)}`);
+    } else {
+      normalized += 1;
+    }
+  }
+  return normalized;
 }
 
 function readTrace(repo, notesRef, commit) {
   const note = git(repo, ['notes', '--ref', notesRef, 'show', commit], { allowFailure: true });
   if (note.status !== 0) return null;
-  const raw = note.stdout.trim();
-  if (!raw.startsWith(TRACE_PREFIX) || Buffer.byteLength(raw) > MAX_ENCODED_NOTE_BYTES) return null;
-  try {
-    const compressed = Buffer.from(raw.slice(TRACE_PREFIX.length), 'base64');
-    const decoded = zlib.gunzipSync(compressed, { maxOutputLength: MAX_DECODED_NOTE_BYTES + 1 });
-    if (decoded.length > MAX_DECODED_NOTE_BYTES) return null;
-    const parsed = JSON.parse(decoded.toString('utf8'));
-    return parsed && typeof parsed === 'object' ? parsed : null;
-  } catch (_) {
-    return null;
-  }
+  return parseTrace(note.stdout.trim());
 }
 
 function noteCoverage(repo, notesRef, commits) {
@@ -354,7 +400,13 @@ async function pushNotes(repo, notesRef) {
 async function runMainline(repo, event, config, binary) {
   requireFullHistory(repo);
   ensureGitIdentity(repo);
-  fetchNotes(repo, config.notesRef);
+  const normalized = fetchNotes(repo, config.notesRef);
+  if (normalized && config.pushNotes) {
+    log(`publishing ${normalized} normalized plain trace note(s) before compute`);
+    await pushNotes(repo, config.notesRef);
+  } else if (normalized) {
+    warn('plain trace notes were normalized locally, but push-notes=false prevents compute from using them');
+  }
 
   const targets = [];
   if (process.env.GITHUB_EVENT_NAME === 'pull_request' || process.env.GITHUB_EVENT_NAME === 'pull_request_target') {

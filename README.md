@@ -14,6 +14,9 @@ developer-published notes into pull requests and landed commits.
 The native Chatter binary is installed through root-level `install.sh --bin-only`.
 That script is the only source of the CDN release URL and SHA-256 checksums, shared
 with the local hook installer; the action has no separate version pin to maintain.
+When a hook has published a direct JSON trace note, the action normalizes it locally for
+the pinned binary. In mainline mode with `push-notes: true`, it publishes that equivalent
+gzip representation before `compute`, whose CLI fetches the remote notes ref itself.
 
 ## Usage
 
