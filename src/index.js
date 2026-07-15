@@ -12,6 +12,8 @@ const TRACE_PREFIX = 'chatter:gzip:';
 const MAX_ENCODED_NOTE_BYTES = 200_000;
 const MAX_DECODED_NOTE_BYTES = 2_000_000;
 const MAX_BRANCH_COMMITS = 200;
+const CHECK_NAME = 'Chatter attribution';
+const MAX_CHECK_SUMMARY_CHARS = 65_000;
 
 function log(message) {
   console.log(`chatter-action: ${message}`);
@@ -108,6 +110,7 @@ function loadConfig() {
     notesRef: filterNotesRef(filter, getInput('notes-ref', '')),
     baseUrl: getInput('base-url', ''),
     comment: booleanInput('comment', true),
+    check: booleanInput('check', true),
     githubToken: getInput('github-token', ''),
     predict: booleanInput('predict', false),
     pushNotes: booleanInput('push-notes', true),
@@ -378,25 +381,71 @@ function agentTable(repo, notesRef, commits) {
   }).join('\n')}\n`;
 }
 
+function githubApiUrl(pathname) {
+  const root = (process.env.GITHUB_API_URL || 'https://api.github.com').replace(/\/+$/, '');
+  return `${root}${pathname}`;
+}
+
+function githubHeaders(token) {
+  return {
+    authorization: `Bearer ${token}`,
+    accept: 'application/vnd.github+json',
+    'content-type': 'application/json',
+    'x-github-api-version': '2022-11-28',
+  };
+}
+
+function checkSummary(report) {
+  const summary = report.replace(/^<!-- chatter-action-report -->\n?/, '');
+  if (summary.length <= MAX_CHECK_SUMMARY_CHARS) return summary;
+  const suffix = '\n\n_Report truncated for the GitHub Checks API._\n';
+  return `${summary.slice(0, MAX_CHECK_SUMMARY_CHARS - suffix.length)}${suffix}`;
+}
+
+async function postCheckRun(event, report, token) {
+  const pr = event.pull_request;
+  const baseRepo = event.repository?.full_name;
+  const headRepo = pr?.head?.repo?.full_name;
+  const headSha = pr?.head?.sha;
+  if (!token || !baseRepo || !headSha || headRepo !== baseRepo) return;
+  try {
+    const response = await fetch(githubApiUrl(`/repos/${baseRepo}/check-runs`), {
+      method: 'POST',
+      headers: githubHeaders(token),
+      body: JSON.stringify({
+        name: CHECK_NAME,
+        head_sha: headSha,
+        status: 'completed',
+        conclusion: 'success',
+        external_id: `chatter-action:${process.env.GITHUB_RUN_ID || 'local'}:${headSha}`,
+        output: {
+          title: CHECK_NAME,
+          summary: checkSummary(report),
+        },
+      }),
+    });
+    if (!response.ok) throw new Error(`create check run returned ${response.status}`);
+    log(`published '${CHECK_NAME}' check run`);
+  } catch (error) {
+    warn(`failed to publish check run: ${error.message}`);
+  }
+}
+
 async function postReportComment(event, report, token) {
   if (!event.pull_request) return;
   const baseRepo = event.repository?.full_name;
   const headRepo = event.pull_request.head?.repo?.full_name;
   if (!token || !baseRepo || headRepo !== baseRepo) return;
   try {
-    const headers = {
-      authorization: `Bearer ${token}`,
-      accept: 'application/vnd.github+json',
-      'content-type': 'application/json',
-    };
+    const headers = githubHeaders(token);
     const number = event.pull_request.number;
-    const listed = await fetch(`https://api.github.com/repos/${baseRepo}/issues/${number}/comments?per_page=100`, { headers });
+    const listed = await fetch(githubApiUrl(`/repos/${baseRepo}/issues/${number}/comments?per_page=100`), { headers });
     if (!listed.ok) throw new Error(`list comments returned ${listed.status}`);
     const comments = await listed.json();
     const existing = comments.find((comment) => String(comment.body || '').startsWith('<!-- chatter-action-report -->'));
     const endpoint = existing
-      ? `https://api.github.com/repos/${baseRepo}/issues/comments/${existing.id}`
-      : `https://api.github.com/repos/${baseRepo}/issues/${number}/comments`;
+      ? githubApiUrl(`/repos/${baseRepo}/issues/comments/${existing.id}`)
+      : githubApiUrl(`/repos/${baseRepo}/issues/${number}/comments`);
     const response = await fetch(endpoint, {
       method: existing ? 'PATCH' : 'POST',
       headers,
@@ -465,6 +514,7 @@ async function runPrReport(repo, event, config, binary) {
   fs.writeFileSync(reportPath, report);
   appendSummary(report);
   setOutput('report-path', reportPath);
+  if (config.check) await postCheckRun(event, report, config.githubToken);
   if (config.comment) await postReportComment(event, report, config.githubToken);
 }
 

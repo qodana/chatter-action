@@ -6,6 +6,8 @@ developer-published notes into pull requests and landed commits.
 - On an open pull request it reports factual attribution from real branch notes.
   An opt-in diagnostic preview can additionally evaluate GitHub's temporary
   test-merge commit; it is disabled by default and never published.
+- The same factual report is posted both as a sticky PR comment and as a
+  `Chatter attribution` GitHub Check by default.
 - After a squash or rebase merge it maps authored commits to landed commits, runs
   `chatter compute`, and publishes the resulting trace note.
 
@@ -22,6 +24,7 @@ on:
     types: [opened, synchronize, reopened, closed]
 
 permissions:
+  checks: write         # publish the detailed Chatter attribution Check
   contents: write        # publish mainline refs/notes/chatter
   pull-requests: write   # update the optional PR report
 
@@ -48,7 +51,8 @@ whose rulesets restrict non-branch refs must allow the workflow token to push
 | `filter` | `rollout` | `rollout` or `wal`; selects the matching notes ref |
 | `notes-ref` | derived | Optional confirmation of the filter-selected notes ref |
 | `comment` | `true` | Update a sticky PR report |
-| `github-token` | `${{ github.token }}` | Token used for the optional PR report comment |
+| `check` | `true` | Publish the detailed `Chatter attribution` GitHub Check |
+| `github-token` | `${{ github.token }}` | Token used for the optional PR report comment and Check |
 | `predict` | `false` | Opt-in diagnostic preview of GitHub's temporary test merge; never published |
 | `push-notes` | `true` | Push computed notes in mainline mode |
 | `extensions` | empty | Comma-separated extension filter for PR reports |

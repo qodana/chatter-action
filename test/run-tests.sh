@@ -11,7 +11,15 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+CHECK_SERVER_PID=''
+cleanup() {
+    if [ -n "$CHECK_SERVER_PID" ]; then
+        kill "$CHECK_SERVER_PID" 2>/dev/null || true
+        wait "$CHECK_SERVER_PID" 2>/dev/null || true
+    fi
+    rm -rf "$tmp"
+}
+trap cleanup EXIT
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 assert_eq() {
@@ -47,6 +55,17 @@ PR_HOME="$tmp/pr-home"
 ACTION_HOME="$tmp/action-home"
 CONSUMER_HOME="$tmp/consumer-home"
 mkdir -p "$PRODUCER_HOME" "$PR_HOME" "$ACTION_HOME" "$CONSUMER_HOME"
+
+CHECK_PORT_FILE="$tmp/check-api-port"
+CHECK_REQUEST_FILE="$tmp/check-api-request.json"
+node "$ROOT/test/checks-api-server.js" "$CHECK_PORT_FILE" "$CHECK_REQUEST_FILE" &
+CHECK_SERVER_PID=$!
+for _ in {1..50}; do
+    [ -s "$CHECK_PORT_FILE" ] && break
+    sleep 0.1
+done
+[ -s "$CHECK_PORT_FILE" ] || fail "checks API test server did not start"
+CHECK_API_URL="http://127.0.0.1:$(cat "$CHECK_PORT_FILE")"
 
 producer_git() {
     HOME="$PRODUCER_HOME" CHATTER_HOME="$PRODUCER_HOME/.chatter" git -C "$PRODUCER" "$@"
@@ -119,13 +138,28 @@ EOF
         GITHUB_EVENT_NAME=pull_request GITHUB_EVENT_PATH="$tmp/pr-event.json" \
         GITHUB_OUTPUT="$tmp/pr-output" GITHUB_STEP_SUMMARY="$tmp/pr-summary.md" \
         GITHUB_ACTION_PATH="$ROOT" RUNNER_TEMP="$tmp/pr-runner-temp" \
-        INPUT_COMMENT=false \
+        GITHUB_API_URL="$CHECK_API_URL" INPUT_GITHUB_TOKEN=check-test-token \
         node "$ROOT/dist/index.js"
 )
 grep -Fxq 'notes-coverage=1/1' "$tmp/pr-output" || fail "pr mode did not read the branch note"
 grep -Fxq 'ai-lines=1' "$tmp/pr-output" || fail "pr mode did not report attribution"
 if grep -Fq "Preview of GitHub's test merge" "$tmp/pr-summary.md"; then
     fail "test-merge preview must be opt-in"
+fi
+test -s "$CHECK_REQUEST_FILE" || fail "action did not call the GitHub API"
+check_record=$(jq -s -e '.[] | select(.method == "POST" and .url == "/repos/local/test/check-runs")' "$CHECK_REQUEST_FILE") \
+    || fail "action did not publish a GitHub Check"
+comment_record=$(jq -s -e '.[] | select(.method == "POST" and .url == "/repos/local/test/issues/1/comments")' "$CHECK_REQUEST_FILE") \
+    || fail "action did not post the PR comment"
+assert_eq 'Chatter attribution' "$(printf '%s' "$check_record" | jq -r '.body.name')" "check name"
+assert_eq "$FEATURE" "$(printf '%s' "$check_record" | jq -r '.body.head_sha')" "check head SHA"
+assert_eq 'success' "$(printf '%s' "$check_record" | jq -r '.body.conclusion')" "check conclusion"
+assert_eq 'Bearer check-test-token' "$(printf '%s' "$check_record" | jq -r '.headers.authorization')" "check authorization"
+if printf '%s' "$check_record" | jq -r '.body.output.summary' | grep -Fq "Preview of GitHub's test merge"; then
+    fail "Check summary must not include the opt-in preview by default"
+fi
+if ! printf '%s' "$comment_record" | jq -r '.body.body' | grep -Fq 'chatter: agent attribution of this branch'; then
+    fail "PR comment did not retain the factual attribution report"
 fi
 
 echo '=== action computes and publishes the landed trace ==='

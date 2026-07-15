@@ -21,8 +21,11 @@ inputs:
   comment:
     description: 'Post/update a sticky PR comment with the report (pr mode; needs pull-requests: write).'
     default: 'true'
+  check:
+    description: 'Publish a detailed Chatter attribution check run (pr mode; needs checks: write).'
+    default: 'true'
   github-token:
-    description: 'Token used only to update the optional PR report comment.'
+    description: 'Token used to update the optional PR report comment and check run.'
     default: ${{ github.token }}
     required: false
   predict:
