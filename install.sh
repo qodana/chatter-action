@@ -7,6 +7,7 @@
 #
 #   cd /path/to/repo && curl -fsSL https://<host>/chatter/install.sh | sh
 #   # or: sh install.sh --repo /path/to/repo
+#   # or: CHATTER_HOME=/tmp/chatter sh install.sh --bin-only
 #
 # What it does (idempotent):
 #   1. Downloads the chatter native binary into ~/.chatter/bin (skipped if present,
@@ -45,12 +46,16 @@ TRACE_REMOTE="${CHATTER_TRACE_REMOTE:-origin}"
 LOG_DIR="$HOME_DIR/logs"
 
 REPO_ARG=""
+BIN_ONLY=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --repo) REPO_ARG="$2"; shift 2 ;;
+        --bin-only) BIN_ONLY=1; shift ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
 done
+[ "$BIN_ONLY" = 0 ] || [ -z "$REPO_ARG" ] || {
+    echo "error: --bin-only cannot be combined with --repo" >&2; exit 2; }
 
 case "$HOOK_BUDGET_SEC" in
     ''|*[!0-9]*) echo "error: CHATTER_HOOK_OBSERVE_BUDGET_SEC must be a positive integer" >&2; exit 2 ;;
@@ -80,36 +85,39 @@ case "$TRACE_REMOTE" in
         ;;
 esac
 
-# --- resolve the repo's main worktree (registry stores roots for uninstall only) ---
-repo_cwd="${REPO_ARG:-$PWD}"
-git -C "$repo_cwd" rev-parse --git-dir >/dev/null 2>&1 || {
-    echo "error: $repo_cwd is not a git repository" >&2; exit 1; }
-common_dir=$(git -C "$repo_cwd" rev-parse --path-format=absolute --git-common-dir)
-repo_root=$(dirname "$common_dir")
-[ -d "$repo_root" ] || { echo "error: cannot resolve main worktree of $repo_cwd" >&2; exit 1; }
-hooks_dir=$(git -C "$repo_root" rev-parse --path-format=absolute --git-path hooks)
-default_hooks_dir="$common_dir/hooks"
-[ "$hooks_dir" = "$default_hooks_dir" ] || {
-    echo "error: core.hooksPath is active for $repo_root ($hooks_dir)" >&2
-    echo "       this POC only supports the repository's own $default_hooks_dir" >&2
-    exit 1
-}
-
-# Do not replace or wrap another tool's hooks. A POC can opt in only where these
-# slots are free; composable hook dispatching is intentionally out of scope here.
-is_our_hook() {
-    [ -f "$1" ] && grep -Fq '# chatter-poc-hook:' "$1" 2>/dev/null
-}
-for hook_name in post-commit pre-push; do
-    hook_path="$hooks_dir/$hook_name"
-    if { [ -e "$hook_path" ] || [ -L "$hook_path" ]; } && ! is_our_hook "$hook_path"; then
-        echo "error: $hook_path already exists and is not managed by chatter" >&2
-        echo "       refusing to overwrite an existing Git hook" >&2
+if [ "$BIN_ONLY" = 0 ]; then
+    # --- resolve the repo's main worktree (registry stores roots for uninstall only) ---
+    repo_cwd="${REPO_ARG:-$PWD}"
+    git -C "$repo_cwd" rev-parse --git-dir >/dev/null 2>&1 || {
+        echo "error: $repo_cwd is not a git repository" >&2; exit 1; }
+    common_dir=$(git -C "$repo_cwd" rev-parse --path-format=absolute --git-common-dir)
+    repo_root=$(dirname "$common_dir")
+    [ -d "$repo_root" ] || { echo "error: cannot resolve main worktree of $repo_cwd" >&2; exit 1; }
+    hooks_dir=$(git -C "$repo_root" rev-parse --path-format=absolute --git-path hooks)
+    default_hooks_dir="$common_dir/hooks"
+    [ "$hooks_dir" = "$default_hooks_dir" ] || {
+        echo "error: core.hooksPath is active for $repo_root ($hooks_dir)" >&2
+        echo "       this POC only supports the repository's own $default_hooks_dir" >&2
         exit 1
-    fi
-done
+    }
 
-mkdir -p "$BIN_DIR" "$LOG_DIR" "$hooks_dir"
+    # Do not replace or wrap another tool's hooks. A POC can opt in only where these
+    # slots are free; composable hook dispatching is intentionally out of scope here.
+    is_our_hook() {
+        [ -f "$1" ] && grep -Fq '# chatter-poc-hook:' "$1" 2>/dev/null
+    }
+    for hook_name in post-commit pre-push; do
+        hook_path="$hooks_dir/$hook_name"
+        if { [ -e "$hook_path" ] || [ -L "$hook_path" ]; } && ! is_our_hook "$hook_path"; then
+            echo "error: $hook_path already exists and is not managed by chatter" >&2
+            echo "       refusing to overwrite an existing Git hook" >&2
+            exit 1
+        fi
+    done
+fi
+
+mkdir -p "$BIN_DIR" "$LOG_DIR"
+[ "$BIN_ONLY" = 1 ] || mkdir -p "$hooks_dir"
 chmod 700 "$HOME_DIR" "$BIN_DIR" "$LOG_DIR" 2>/dev/null || true
 
 # --- 1. binary (zip asset from the CDN, sha256-verified against the pinned manifest) ---
@@ -163,6 +171,11 @@ elif [ ! -x "$BIN" ]; then
     chmod +x "$bin_path"
     mv -f "$bin_path" "$BIN"
     echo "chatter: installed $BIN (sha256 verified)"
+fi
+
+if [ "$BIN_ONLY" = 1 ]; then
+    echo "chatter: binary ready at $BIN"
+    exit 0
 fi
 
 # --- 2. register repo (dedup; used only by uninstall --all) ---

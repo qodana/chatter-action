@@ -22,30 +22,31 @@ for tool in git jq gzip base64; do
     command -v "$tool" >/dev/null 2>&1 || fail "$tool is required"
 done
 
-# Download through the action installer so this test verifies the public CDN pin
-# and checksum used by consumers. CHATTER_BIN remains a local-only speed override.
+# Download through the one authoritative installer pin. The bundled action invokes
+# the same `install.sh --bin-only` path when it runs on GitHub.
 if [ -n "${CHATTER_BIN:-}" ] && [ -x "$CHATTER_BIN" ]; then
     BIN=$CHATTER_BIN
 else
-    : > "$tmp/action-output"
-    if ! GITHUB_OUTPUT="$tmp/action-output" RUNNER_TEMP="$tmp/runner" \
-        "$ROOT/scripts/install-chatter.sh" >"$tmp/action-install.log" 2>&1; then
+    if ! CHATTER_HOME="$tmp/release-home" sh "$ROOT/install.sh" --bin-only \
+        >"$tmp/action-install.log" 2>&1; then
         sed -n '1,200p' "$tmp/action-install.log" >&2
-        fail "action binary installation failed"
+        fail "release binary installation failed"
     fi
-    BIN=$(sed -n 's/^bin=//p' "$tmp/action-output")
+    BIN="$tmp/release-home/bin/chatter"
 fi
-[ -x "$BIN" ] || fail "action did not provide an executable chatter binary"
+[ -x "$BIN" ] || fail "installer did not provide an executable chatter binary"
 "$BIN" blame --help | grep -Fq -- '--online' || fail "pinned binary lacks blame --online"
 
 ORIGIN="$tmp/origin.git"
 PRODUCER="$tmp/producer"
+PR_RUNNER="$tmp/pr-runner"
 RUNNER="$tmp/action-runner"
 CONSUMER="$tmp/consumer"
 PRODUCER_HOME="$tmp/producer-home"
+PR_HOME="$tmp/pr-home"
 ACTION_HOME="$tmp/action-home"
 CONSUMER_HOME="$tmp/consumer-home"
-mkdir -p "$PRODUCER_HOME" "$ACTION_HOME" "$CONSUMER_HOME"
+mkdir -p "$PRODUCER_HOME" "$PR_HOME" "$ACTION_HOME" "$CONSUMER_HOME"
 
 producer_git() {
     HOME="$PRODUCER_HOME" CHATTER_HOME="$PRODUCER_HOME/.chatter" git -C "$PRODUCER" "$@"
@@ -75,7 +76,7 @@ producer_git remote add origin "$ORIGIN"
 producer_git push -qu origin main
 
 # The POC installer creates real post-commit/pre-push hooks. It reuses the same
-# verified binary downloaded by the composite action above.
+# verified binary downloaded through the authoritative installer path above.
 if ! HOME="$PRODUCER_HOME" CHATTER_HOME="$PRODUCER_HOME/.chatter" \
     CHATTER_BIN="$BIN" CHATTER_HOOK_OBSERVE_BUDGET_SEC=1 \
     sh "$ROOT/install.sh" --repo "$PRODUCER" >"$tmp/installer.log" 2>&1; then
@@ -101,6 +102,29 @@ producer_git push -qu origin feature 'feature:refs/pull/1/head'
 REMOTE_SOURCE_NOTE=$(git --git-dir="$ORIGIN" notes --ref=refs/notes/chatter show "$FEATURE")
 assert_eq "$SOURCE_NOTE" "$REMOTE_SOURCE_NOTE" "pre-push hook did not publish the branch note"
 
+echo '=== bundled action reports branch attribution ==='
+git clone -q "$ORIGIN" "$PR_RUNNER"
+configure_repo "$PR_RUNNER"
+cat > "$tmp/pr-event.json" <<EOF
+{"action":"synchronize","number":1,
+ "pull_request":{"number":1,"merged":false,
+   "head":{"sha":"$FEATURE","repo":{"full_name":"local/test"}},"base":{"ref":"main"}},
+ "repository":{"full_name":"local/test","default_branch":"main"}}
+EOF
+: > "$tmp/pr-output"
+: > "$tmp/pr-summary.md"
+(
+    cd "$PR_RUNNER"
+    HOME="$PR_HOME" CHATTER_HOME="$PR_HOME/.chatter" CHATTER_BIN="$BIN" \
+        GITHUB_EVENT_NAME=pull_request GITHUB_EVENT_PATH="$tmp/pr-event.json" \
+        GITHUB_OUTPUT="$tmp/pr-output" GITHUB_STEP_SUMMARY="$tmp/pr-summary.md" \
+        GITHUB_ACTION_PATH="$ROOT" RUNNER_TEMP="$tmp/pr-runner-temp" \
+        INPUT_COMMENT=false INPUT_PREDICT=false \
+        node "$ROOT/dist/index.js"
+)
+grep -Fxq 'notes-coverage=1/1' "$tmp/pr-output" || fail "pr mode did not read the branch note"
+grep -Fxq 'ai-lines=1' "$tmp/pr-output" || fail "pr mode did not report attribution"
+
 echo '=== action computes and publishes the landed trace ==='
 producer_git checkout -q main
 producer_git merge --squash feature >/dev/null
@@ -123,9 +147,12 @@ EOF
     HOME="$ACTION_HOME" CHATTER_HOME="$ACTION_HOME/.chatter" \
         GITHUB_EVENT_NAME=pull_request GITHUB_EVENT_PATH="$tmp/merged-pr-event.json" \
         GITHUB_OUTPUT="$tmp/action-output" GITHUB_STEP_SUMMARY="$tmp/action-summary.md" \
-        CHATTER_BIN="$BIN" CHATTER_COMMENT=false CHATTER_PUSH_NOTES=true \
-        "$ROOT/scripts/run.sh"
+        GITHUB_ACTION_PATH="$ROOT" RUNNER_TEMP="$tmp/action-runner-temp" \
+        INPUT_COMMENT=false INPUT_PUSH_NOTES=true \
+        node "$ROOT/dist/index.js"
 )
+test -x "$tmp/action-runner-temp/chatter-action/bin/chatter" \
+    || fail "bundled action did not install its binary through install.sh --bin-only"
 grep -Fxq 'computed-commits=1' "$tmp/action-output" || fail "action did not compute a landed note"
 grep -Fxq 'notes-coverage=1/1' "$tmp/action-output" || fail "action did not read the branch note"
 MAPPED_NOTE=$(git --git-dir="$ORIGIN" notes --ref=refs/notes/chatter show "$SQUASH")

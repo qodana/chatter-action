@@ -6,24 +6,32 @@ on:
   pull_request:
     paths:
       - 'action.yml'
-      - 'scripts/**'
+      - 'src/**'
+      - 'dist/**'
+      - 'package.json'
+      - 'package-lock.json'
       - 'install.sh'
       - 'uninstall.sh'
       - 'test/**'
       - '.github/workflows/action-test.yml'
   workflow_dispatch:
 
-# The test uses only local temporary bare repositories. It never writes to this
-# repository or to GitHub refs, so the job token needs no write permission.
 permissions:
   contents: read
 
 jobs:
   e2e:
-    name: release-37 hook → action → online blame
+    name: release hook → bundled action → online blame
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run end-to-end release test
-        run: bash test/run-tests.sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+      - run: git diff --exit-code -- dist
+      - run: npm test

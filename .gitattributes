@@ -1,0 +1,2 @@
+# ncc's generated bootstrap intentionally contains tab-only padding.
+dist/index.js -whitespace

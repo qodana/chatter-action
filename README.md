@@ -1,16 +1,16 @@
 # Chatter GitHub Action
 
-This composite action carries AI attribution from developer-published Chatter
-trace notes into pull requests and landed commits.
+This is a bundled `node20` GitHub Action for carrying Chatter attribution from
+developer-published notes into pull requests and landed commits.
 
-- On an open pull request it reports factual attribution from the real branch
-  notes, with an optional prediction for GitHub's test-merge commit.
-- After a squash or rebase merge it maps the authored commits to the landed
-  commit, runs `chatter compute`, and publishes the resulting trace note.
+- On an open pull request it reports factual attribution from real branch notes,
+  with an optional prediction for GitHub's test-merge commit.
+- After a squash or rebase merge it maps authored commits to landed commits, runs
+  `chatter compute`, and publishes the resulting trace note.
 
-The action is pinned to Chatter CDN build `37-26e21a` (`v0.0.28` line). That
-release stores a single `chatter:gzip:` note in `refs/notes/chatter` (or
-`refs/notes/wal-chatter` for `filter: wal`), and supports `blame --online`.
+The native Chatter binary is installed through root-level `install.sh --bin-only`.
+That script is the only source of the CDN release URL and SHA-256 checksums, shared
+with the local hook installer; the action has no separate version pin to maintain.
 
 ## Usage
 
@@ -43,24 +43,26 @@ whose rulesets restrict non-branch refs must allow the workflow token to push
 | Input | Default | Purpose |
 |---|---|---|
 | `mode` | `auto` | `pr` or `mainline`; auto-selects from the event |
-| `chatter-version` | `37-26e21a` | checksum-pinned Chatter CDN build |
-| `base-url` | JetBrains CDN | CDN mirror override; checksum still applies |
+| `base-url` | installer default | Optional full release URL override; its archive must match install.sh checksums |
 | `filter` | `rollout` | `rollout` or `wal`; selects the matching notes ref |
 | `notes-ref` | derived | Optional confirmation of the filter-selected notes ref |
 | `comment` | `true` | Update a sticky PR report |
+| `github-token` | `${{ github.token }}` | Token used for the optional PR report comment |
 | `predict` | `true` | Include an explicitly labeled test-merge prediction |
 | `push-notes` | `true` | Push computed notes in mainline mode |
 | `extensions` | empty | Comma-separated extension filter for PR reports |
 
-## Installer scripts
+## Local hook installer
 
-`install.sh` and `uninstall.sh` are the accompanying per-repository POC hook
-installer. The end-to-end workflow verifies the full path: a static branch trace
-is published by its real pre-push hook, this action computes and pushes the
+`install.sh` and `uninstall.sh` are the per-repository POC hook installer. The
+end-to-end workflow verifies the complete release flow: a static branch trace is
+published by its real pre-push hook, this bundled action computes and pushes the
 landed trace, and a fresh clone resolves it through `blame --online`.
 
-Run the same integration check locally with:
+For development:
 
 ```bash
-bash test/run-tests.sh
+npm ci
+npm run build
+npm test
 ```

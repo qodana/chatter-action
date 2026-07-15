@@ -1,80 +1,54 @@
 name: 'chatter'
 description: >-
-  AI attribution for commits: predictive agent trace on pull requests,
-  computed trace notes on the mainline after squash/rebase merges.
+  AI attribution for commits: PR reports and computed trace notes after squash or rebase merges.
 author: 'JetBrains'
 
 inputs:
   mode:
-    description: 'auto | pr | mainline. auto picks by event: pull_request closed+merged / push -> mainline, other pull_request events -> pr.'
+    description: 'auto | pr | mainline. auto selects from the GitHub event.'
     default: 'auto'
-  chatter-version:
-    description: 'Pinned chatter release (sha256-verified; only versions known to this action are accepted)'
-    default: '37-26e21a'
   base-url:
-    description: 'CDN base URL override (internal mirror); the archive must match the pinned sha256'
-    default: 'https://download.jetbrains.com/qodana/chatter'
+    description: 'Optional full Chatter release URL override; install.sh remains the source of the pinned release and checksums.'
+    default: ''
   notes-ref:
     description: >-
-      Trace notes ref override. Empty (default) derives it from the filter — refs/notes/chatter
-      for rollout, refs/notes/wal-chatter for wal — matching what the chatter CLI itself reads
-      and writes; a value that contradicts the filter fails the action.
+      Optional notes ref confirmation. Empty derives refs/notes/chatter for rollout or
+      refs/notes/wal-chatter for wal; a conflicting value fails the action.
     default: ''
   filter:
     description: 'chatter instance: rollout | wal'
     default: 'rollout'
   comment:
-    description: 'Post/update a sticky PR comment with the report (pr mode; needs pull-requests: write)'
+    description: 'Post/update a sticky PR comment with the report (pr mode; needs pull-requests: write).'
     default: 'true'
+  github-token:
+    description: 'Token used only to update the optional PR report comment.'
+    default: ${{ github.token }}
+    required: false
   predict:
-    description: 'Add the explicitly-labeled prediction section, computed on the real refs/pull/N/merge test-merge commit (pr mode)'
+    description: 'Add an explicitly-labeled prediction from GitHub test-merge state (pr mode).'
     default: 'true'
   push-notes:
-    description: 'Push computed notes to origin (mainline mode; needs contents: write)'
+    description: 'Push computed notes to origin (mainline mode; needs contents: write).'
     default: 'true'
   extensions:
-    description: 'Comma-separated file extensions for the blame report (empty = all changed files)'
+    description: 'Comma-separated file extensions for the PR blame report (empty = all changed files).'
     default: ''
 
 outputs:
   method:
-    description: 'Mapping method used in mainline mode (MERGE_PARENTS/SQUASH_VIA_PR/PATCH_ID/PR_CONTENT/CHERRY_TRAILER/IDENTITY/UNKNOWN)'
-    value: ${{ steps.run.outputs.method }}
+    description: 'Mapping method used in mainline mode.'
   ai-lines:
-    description: 'AI-attributed lines across the changed files at the real PR head (pr mode, factual)'
-    value: ${{ steps.run.outputs.ai-lines }}
+    description: 'AI-attributed lines across changed files in pr mode.'
   predicted-ai-lines:
-    description: 'AI-attributed lines on the test-merge commit (pr mode, prediction section)'
-    value: ${{ steps.run.outputs.predicted-ai-lines }}
+    description: 'AI-attributed lines on the optional test-merge prediction.'
   total-lines:
-    description: 'Total lines across the report scope (pr mode)'
-    value: ${{ steps.run.outputs.total-lines }}
+    description: 'Total lines across the PR report scope.'
   notes-coverage:
-    description: 'Branch commits with published notes, as "X/Y"'
-    value: ${{ steps.run.outputs.notes-coverage }}
+    description: 'Branch commits with readable published notes, as X/Y.'
   report-path:
-    description: 'Path to the generated markdown report (pr mode)'
-    value: ${{ steps.run.outputs.report-path }}
+    description: 'Path to generated PR report markdown.'
 
 runs:
-  using: 'composite'
-  steps:
-    - id: install
-      shell: bash
-      run: '"${GITHUB_ACTION_PATH}/scripts/install-chatter.sh"'
-      env:
-        CHATTER_VERSION: ${{ inputs.chatter-version }}
-        CHATTER_BASE_URL: ${{ inputs.base-url }}
-    - id: run
-      shell: bash
-      run: '"${GITHUB_ACTION_PATH}/scripts/run.sh"'
-      env:
-        CHATTER_BIN: ${{ steps.install.outputs.bin }}
-        CHATTER_ACTION_MODE: ${{ inputs.mode }}
-        CHATTER_NOTES_REF: ${{ inputs.notes-ref }}
-        CHATTER_FILTER: ${{ inputs.filter }}
-        CHATTER_COMMENT: ${{ inputs.comment }}
-        CHATTER_PREDICT: ${{ inputs.predict }}
-        CHATTER_PUSH_NOTES: ${{ inputs.push-notes }}
-        CHATTER_EXTENSIONS: ${{ inputs.extensions }}
-        GH_TOKEN: ${{ github.token }}
+  using: 'node20'
+  main: 'dist/index.js'
