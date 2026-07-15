@@ -195,6 +195,22 @@ grep -Fxq 'notes-coverage=1/1' "$tmp/action-output" || fail "action did not read
 MAPPED_NOTE=$(git --git-dir="$ORIGIN" notes --ref=refs/notes/chatter show "$SQUASH")
 case "$MAPPED_NOTE" in chatter:gzip:*) ;; *) fail "action did not push a compressed landed note" ;; esac
 
+echo '=== installer merges a CI-published notes ref before the next push ==='
+# The action just changed the remote notes ref, while PRODUCER still has only its
+# branch-side ref. Its next ordinary push must retain that landed note and publish
+# the new local note instead of silently swallowing a non-fast-forward rejection.
+printf 'follow-up after CI\n' > "$PRODUCER/follow-up.txt"
+producer_git add follow-up.txt
+producer_git commit -qm 'follow-up after CI'
+FOLLOWUP=$(producer_git rev-parse HEAD)
+FOLLOWUP_NOTE=$(static_note "$FOLLOWUP")
+printf '%s\n' "$FOLLOWUP_NOTE" | producer_git notes --ref=refs/notes/chatter add -F - "$FOLLOWUP"
+producer_git push -qu origin main
+assert_eq "$MAPPED_NOTE" "$(git --git-dir="$ORIGIN" notes --ref=refs/notes/chatter show "$SQUASH")" \
+    "pre-push did not preserve the CI-published landed note"
+assert_eq "$FOLLOWUP_NOTE" "$(git --git-dir="$ORIGIN" notes --ref=refs/notes/chatter show "$FOLLOWUP")" \
+    "pre-push did not publish its new note after CI changed the notes ref"
+
 echo '=== fresh clone resolves attribution through blame --online ==='
 git clone -q "$ORIGIN" "$CONSUMER"
 if git -C "$CONSUMER" show-ref --verify --quiet refs/notes/chatter; then

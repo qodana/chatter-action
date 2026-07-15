@@ -22,9 +22,10 @@
 #   * Hooks call chatter with a 20 s soft observe budget by default and (unless strict)
 #     never fail Git. post-commit skips rebase-internal commits; a completed rewrite is
 #     resolved by the next observe from lineage evidence.
-#   * pre-push observes the local repository, then explicitly publishes the main
-#     agent-trace notes ref plus its chunk-object refs to the build's built-in origin
-#     remote. Git has no post-push hook, so publication is non-interactive and explicit.
+#   * pre-push observes the local repository, merges the latest remote notes into its
+#     local notes ref, then explicitly publishes the main agent-trace notes ref plus
+#     its chunk-object refs to the build's built-in origin remote. Git has no post-push
+#     hook, so publication is non-interactive and explicit.
 set -eu
 
 # --- pinned release (from the CI/CD CDN manifest; update these on new builds) ---
@@ -262,6 +263,23 @@ PRE_PUSH_GUARD
 publish_trace_notes() {
     # Agent-less commits have no trace note, so there is nothing to publish.
     git show-ref --verify --quiet "$NOTES_REF" || return 0
+
+    # CI may have published a landed note since this checkout last fetched notes.
+    # Merge that remote side first: a plain push would be non-fast-forward and the
+    # default non-strict hook would otherwise silently leave this branch note local.
+    incoming="${NOTES_REF}-chatter-poc-incoming"
+    git update-ref -d "$incoming" >/dev/null 2>&1 || true
+    GIT_TERMINAL_PROMPT=0 git fetch --no-tags "$TRACE_REMOTE" \
+        "+$NOTES_REF:$incoming" >> "$HOOK_LOG" 2>&1 || true
+    if git show-ref --verify --quiet "$incoming"; then
+        GIT_AUTHOR_NAME=chatter-hook GIT_AUTHOR_EMAIL=chatter-hook@localhost \
+        GIT_COMMITTER_NAME=chatter-hook GIT_COMMITTER_EMAIL=chatter-hook@localhost \
+            git notes --ref="$NOTES_REF" merge -s ours "$incoming" >> "$HOOK_LOG" 2>&1 || {
+                git update-ref -d "$incoming" >/dev/null 2>&1 || true
+                return 1
+            }
+    fi
+    git update-ref -d "$incoming" >/dev/null 2>&1 || true
 
     set -- "$NOTES_REF:$NOTES_REF"
     for trace_ref in $(git for-each-ref --format='%(refname)' "$CHUNK_REF_PATTERN"); do
