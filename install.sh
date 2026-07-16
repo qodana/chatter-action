@@ -29,12 +29,12 @@
 set -eu
 
 # --- pinned release (from the CI/CD CDN manifest; update these on new builds) ---
-# sourceBuild: StaticAnalysis_Base_chatter_github_releases #37, seed 26e21a
-BASE_URL="${CHATTER_BASE_URL:-https://download.jetbrains.com/qodana/chatter/37-26e21a}"
-SHA_LINUX_AARCH64="f70bb4ea387cbb38d2a59ca332ac8e589336a46d1132f1ca00fb1acbb2e6d2b0"
-SHA_LINUX_X86_64="d73c5e17e4013e4c3dbaa49cd2363933a4e235bfe4db8e961307e5935b034a99"
-SHA_MACOS_AARCH64="a75d6e13bb42bfc66d39fda3025bda5f70b3af49b79e23665a9976594d8b7294"
-SHA_MACOS_X86_64="f60c2a8deb2caca5c2cb4a7439a280561958d4b617cef6533f4e0ddcd48ec31c"
+# sourceBuild: StaticAnalysis_Base_chatter_github_releases #38, seed 11763b
+BASE_URL="${CHATTER_BASE_URL:-https://download.jetbrains.com/qodana/chatter/38-11763b}"
+SHA_LINUX_AARCH64="57ec62050f5145aae5ad03616c78b157fd9c0d6be896a5b7d07ae9c16573b22e"
+SHA_LINUX_X86_64="e267b58b9fdcb44dfb0562b565b49bc147fbfde31ecf868b20f8c061eebbbc2a"
+SHA_MACOS_AARCH64="472c8c1072051222ae817bf8f95e2abd9493ae59800dca32e2207bf2bf401a7d"
+SHA_MACOS_X86_64="42c2e33cded9ee21dee86139fa2884891f0a47467f9de0fc887fe1b57f4996cf"
 
 HOME_DIR="${CHATTER_HOME:-$HOME/.chatter}"
 BIN_DIR="$HOME_DIR/bin"

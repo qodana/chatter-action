@@ -438,9 +438,12 @@ function agentTable(repo, notesRef, commits, attributions) {
 
   const totals = new Map();
   for (const attribution of attributions) {
-    const key = attribution.providerName
-      ? `${attribution.providerName}\t${attribution.model || '-'}`
-      : sourceByChat.get(attribution.chatId) || '?\t-';
+    // Trace-note agent IDs are stable report labels (for example `claude`), while
+    // newer binaries expose a friendlier display name (`Claude Code`) in blame.
+    // Keep the stable trace identity whenever the fetched note provides it; the
+    // blame fields remain the fallback for notes whose source metadata is absent.
+    const key = sourceByChat.get(attribution.chatId)
+      || (attribution.providerName ? `${attribution.providerName}\t${attribution.model || '-'}` : '?\t-');
     totals.set(key, (totals.get(key) || 0) + attribution.lines);
   }
   if (!totals.size) return '';
