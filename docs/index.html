@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Chatter — a clear record of AI changes in GitHub and on your machine.">
+    <title>Chatter — from AI change to GitHub</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div class="paper-noise" aria-hidden="true"></div>
+    <main class="paper">
+      <header class="site-header">
+        <div class="brand" aria-label="JetBrains Chatter by Qodana">
+          <a class="brand-logo-link" href="https://www.jetbrains.com/" aria-label="JetBrains">
+          <svg class="jb-mark" viewBox="0 0 32 32" role="img" aria-label="JetBrains">
+            <path d="m10.17 1.83-8.34 8.34C.66 11.34 0 12.93 0 14.59V29.5C0 30.88 1.12 32 2.5 32h14.91c1.66 0 3.245-.66 4.42-1.83l8.34-8.34c1.17-1.17 1.83-2.76 1.83-4.42V2.5C32 1.12 30.88 0 29.5 0H14.59c-1.66 0-3.245.66-4.42 1.83Z"/>
+            <path class="jb-cutout" d="M24 8H4v20h20V8Z"/>
+            <path d="M15 24H6v2h9v-2Z"/>
+          </svg>
+          </a>
+          <span class="brand-words"><a class="brand-jetbrains-name" href="https://www.jetbrains.com/">JETBRAINS</a><span>Chatter by <a href="https://www.jetbrains.com/qodana/">Qodana</a></span></span>
+        </div>
+        <nav aria-label="Sections">
+          <a href="#repository">Repository</a>
+          <a href="#computer">Your computer</a>
+          <a href="#github">GitHub</a>
+          <a href="#local">Local data</a>
+        </nav>
+      </header>
+
+      <section id="top" class="hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow">AI attribution for a normal Git workflow</p>
+          <h1 id="hero-title">Who wrote<br>this line?</h1>
+          <p class="hero-lead">Chatter shows which changes came from AI in a pull request, in a pipeline, and in a local clone. No separate Git workflow required.</p>
+          <div class="hero-actions">
+            <a class="button button-dark" href="#repository">Add it to a repository</a>
+            <a class="plain-link" href="#how-it-works">How it works <span aria-hidden="true">↓</span></a>
+          </div>
+        </div>
+        <aside class="margin-note hero-note">
+          <span class="pin" aria-hidden="true"></span>
+          <p>Your code stays your code. Chatter only adds Git notes with attribution.</p>
+        </aside>
+      </section>
+
+      <section id="repository" class="section install-section" aria-labelledby="repository-title">
+        <div class="section-intro">
+          <p class="step">01</p>
+          <h2 id="repository-title">Add a workflow<br>to your repository</h2>
+          <p>Create <code>.github/workflows/chatter.yml</code>. It runs for pull requests and after a merge. Chatter needs full Git history to match changes correctly.</p>
+        </div>
+        <div class="code-sheet">
+          <div class="code-topline"><span> .github/workflows/chatter.yml </span><button class="copy-button" type="button" data-copy="workflow">Copy</button></div>
+          <pre id="workflow"><code>name: Chatter attribution
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+permissions:
+  checks: write
+  contents: write
+  pull-requests: write
+
+jobs:
+  attribution:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: qodana/chatter-action@main</code></pre>
+        </div>
+        <p class="small-print">This is the shortest setup. For a controlled production pin, replace <code>main</code> with a release SHA. If your repository restricts refs, allow the workflow to write <code>refs/notes/*</code>.</p>
+      </section>
+
+      <section id="computer" class="section split-section" aria-labelledby="computer-title">
+        <div class="section-intro">
+          <p class="step">02</p>
+          <h2 id="computer-title">Install Chatter<br>on your computer</h2>
+          <p>The installer puts the binary in <code>~/.chatter/bin</code> and adds two Git hooks: one notices a new commit, the other publishes its note on push.</p>
+        </div>
+        <div class="install-card">
+          <ol class="plain-steps">
+            <li><span>1</span><p>Open a terminal in the root of the Git repository you want to track.</p></li>
+            <li><span>2</span><p>Run this one command. It downloads and starts the installer.</p></li>
+          </ol>
+          <div class="terminal terminal-install" aria-label="Installation command">
+            <div class="terminal-bar"><i></i><i></i><i></i><span>terminal</span></div>
+            <pre id="install-command"><code>curl -fsSL \<br>https://raw.githubusercontent.com/qodana/chatter-action/main/install.sh | sh</code></pre>
+            <button class="copy-button terminal-copy" type="button" data-copy="install-command">Copy</button>
+          </div>
+          <p class="small-print">The installer never overwrites somebody else’s hooks. If <code>post-commit</code> or <code>pre-push</code> already belongs to another tool, it stops and tells you.</p>
+        </div>
+      </section>
+
+      <section id="how-it-works" class="section process-section" aria-labelledby="process-title">
+        <div class="section-heading">
+          <p class="step">03</p>
+          <h2 id="process-title">Then, keep working as usual</h2>
+          <p>Your team does not need a new process.</p>
+        </div>
+        <ol class="process-list">
+          <li><span class="process-number">01</span><div><h3>You make a commit</h3><p>A local hook records which lines are linked to an AI session.</p></div></li>
+          <li><span class="process-number">02</span><div><h3>You push the branch</h3><p>Git notes with attribution travel with the branch.</p></div></li>
+          <li><span class="process-number">03</span><div><h3>GitHub shows the result</h3><p>The action reads the notes and adds a clear report to the pull request.</p></div></li>
+          <li><span class="process-number">04</span><div><h3>A merge keeps the history</h3><p>The action moves attribution to the final commit, including squash and rebase merges.</p></div></li>
+        </ol>
+      </section>
+
+      <section id="github" class="section github-section" aria-labelledby="github-title">
+        <div class="section-intro">
+          <p class="step">04</p>
+          <h2 id="github-title">Where to look<br>in GitHub</h2>
+          <p>A pull request gets two useful things: a pinned comment and a <strong>Chatter attribution</strong> check.</p>
+        </div>
+        <div class="report-stack" aria-label="Example Chatter report in a pull request">
+          <article class="report-card report-comment">
+            <p class="report-label">Pull request comment</p>
+            <h3>chatter: agent attribution of this branch</h3>
+            <p class="report-metric"><b>595 of 614</b> lines in changed files are AI-attributed <em>(96%)</em></p>
+            <div class="report-rule"></div>
+            <div class="report-grid">
+              <div><span>file</span><b>AdvancedCalculator.java</b></div>
+              <div><span>agent</span><b>Claude</b></div>
+              <div><span>model</span><b>claude-sonnet</b></div>
+            </div>
+          </article>
+          <article class="report-card report-check">
+            <span class="check-icon" aria-hidden="true">✓</span>
+            <div><p class="report-label">Checks</p><h3>Chatter attribution</h3><p>The report sits next to the other pull request checks.</p></div>
+          </article>
+        </div>
+      </section>
+
+      <section id="local" class="section local-section" aria-labelledby="local-title">
+        <div class="section-intro">
+          <p class="step">05</p>
+          <h2 id="local-title">Get the data<br>in a local clone</h2>
+          <p>There is no need to fetch notes by hand. Add <code>--online</code> and Chatter gets the attribution it needs from Git.</p>
+        </div>
+        <div class="local-card">
+          <div class="terminal terminal-light" aria-label="Local blame command">
+            <div class="terminal-bar"><i></i><i></i><i></i><span>terminal</span></div>
+            <pre id="blame-command"><code>~/.chatter/bin/chatter blame src/example.js \
+  --online --json --filter rollout --repo .</code></pre>
+            <button class="copy-button terminal-copy" type="button" data-copy="blame-command">Copy</button>
+          </div>
+          <div class="json-note">
+            <p>The JSON includes:</p>
+            <ul>
+              <li>attributed lines;</li>
+              <li>the provider and model;</li>
+              <li>a chat link, when one exists;</li>
+              <li>lines without AI attribution as <code>null</code>.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="section checklist-section" aria-labelledby="checklist-title">
+        <div class="checklist-copy">
+          <p class="eyebrow">A short checklist</p>
+          <h2 id="checklist-title">If something is missing</h2>
+        </div>
+        <ul class="checklist">
+          <li>The workflow has <code>fetch-depth: 0</code>.</li>
+          <li>The workflow has <code>checks</code>, <code>contents</code>, and <code>pull-requests: write</code> permissions.</li>
+          <li>Local hooks are installed in the same repository you push from.</li>
+          <li>Use <code>blame --online</code> for a local check.</li>
+        </ul>
+      </section>
+
+      <footer>
+        <span><a href="https://www.jetbrains.com/">JetBrains</a> Chatter by <a href="https://www.jetbrains.com/qodana/">Qodana</a></span>
+        <a href="https://github.com/qodana/chatter-action">Source code on GitHub ↗</a>
+      </footer>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>
