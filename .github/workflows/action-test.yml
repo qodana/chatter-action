@@ -13,6 +13,8 @@ on:
       - 'install.sh'
       - 'uninstall.sh'
       - 'test/**'
+      - 'integration/**'
+      - 'README.md'
       - '.github/workflows/action-test.yml'
   workflow_dispatch:
 
@@ -34,4 +36,5 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: git diff --exit-code -- dist
+      - run: bash -n integration/github-demo/*.sh
       - run: npm test

@@ -4,7 +4,8 @@
   "version": "0.0.0",
   "scripts": {
     "build": "ncc build src/index.js -o dist",
-    "test": "bash test/run-tests.sh"
+    "test": "bash test/run-tests.sh",
+    "test:github-demo": "bash integration/github-demo/all.sh"
   },
   "devDependencies": {
     "@vercel/ncc": "0.38.3"
