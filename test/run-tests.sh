@@ -26,9 +26,13 @@ assert_eq() {
     [ "$1" = "$2" ] || fail "$3 (expected '$1', got '$2')"
 }
 
-for tool in git jq; do
+for tool in git jq node; do
     command -v "$tool" >/dev/null 2>&1 || fail "$tool is required"
 done
+
+# Fast offline unit tests gate the network-heavy end-to-end run below.
+echo '=== unit tests ==='
+node --test "$ROOT"/test/unit/*.test.js || fail "unit tests failed"
 
 # Download through the one authoritative installer pin. The bundled action invokes
 # the same `install.sh --bin-only` path when it runs on GitHub.

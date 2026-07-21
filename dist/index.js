@@ -3,80 +3,10 @@
 /******/ 	"use strict";
 /******/ 	var __webpack_modules__ = ({
 
-/***/ 421:
-/***/ ((module) => {
+/***/ 105:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
-module.exports = require("node:child_process");
-
-/***/ }),
-
-/***/ 24:
-/***/ ((module) => {
-
-module.exports = require("node:fs");
-
-/***/ }),
-
-/***/ 161:
-/***/ ((module) => {
-
-module.exports = require("node:os");
-
-/***/ }),
-
-/***/ 760:
-/***/ ((module) => {
-
-module.exports = require("node:path");
-
-/***/ }),
-
-/***/ 522:
-/***/ ((module) => {
-
-module.exports = require("node:zlib");
-
-/***/ })
-
-/******/ 	});
-/************************************************************************/
-/******/ 	// The module cache
-/******/ 	var __webpack_module_cache__ = {};
-/******/ 	
-/******/ 	// The require function
-/******/ 	function __nccwpck_require__(moduleId) {
-/******/ 		// Check if module is in cache
-/******/ 		var cachedModule = __webpack_module_cache__[moduleId];
-/******/ 		if (cachedModule !== undefined) {
-/******/ 			return cachedModule.exports;
-/******/ 		}
-/******/ 		// Create a new module (and put it into the cache)
-/******/ 		var module = __webpack_module_cache__[moduleId] = {
-/******/ 			// no module.id needed
-/******/ 			// no module.loaded needed
-/******/ 			exports: {}
-/******/ 		};
-/******/ 	
-/******/ 		// Execute the module function
-/******/ 		var threw = true;
-/******/ 		try {
-/******/ 			__webpack_modules__[moduleId](module, module.exports, __nccwpck_require__);
-/******/ 			threw = false;
-/******/ 		} finally {
-/******/ 			if(threw) delete __webpack_module_cache__[moduleId];
-/******/ 		}
-/******/ 	
-/******/ 		// Return the exports of the module
-/******/ 		return module.exports;
-/******/ 	}
-/******/ 	
-/************************************************************************/
-/******/ 	/* webpack/runtime/compat */
-/******/ 	
-/******/ 	if (typeof __nccwpck_require__ !== 'undefined') __nccwpck_require__.ab = __dirname + "/";
-/******/ 	
-/************************************************************************/
-var __webpack_exports__ = {};
+/* module decorator */ module = __nccwpck_require__.nmd(module);
 
 
 const childProcess = __nccwpck_require__(421);
@@ -92,6 +22,8 @@ const MAX_DECODED_NOTE_BYTES = 2_000_000;
 const MAX_BRANCH_COMMITS = 200;
 const CHECK_NAME = 'Chatter attribution';
 const MAX_CHECK_SUMMARY_CHARS = 65_000;
+const EXEC_TIMEOUT_MS = 600_000;
+const GIT_TIMEOUT_MS = 60_000;
 
 function log(message) {
   console.log(`chatter-action: ${message}`);
@@ -127,17 +59,26 @@ function appendSummary(text) {
 }
 
 function execute(command, args, options = {}) {
+  const timeout = options.timeout ?? EXEC_TIMEOUT_MS;
   const result = childProcess.spawnSync(command, args, {
     cwd: options.cwd,
     env: options.env || process.env,
     input: options.input,
     encoding: 'utf8',
     maxBuffer: 20 * 1024 * 1024,
+    timeout: timeout,
   });
   const stdout = result.stdout || '';
   const stderr = result.stderr || '';
   const outcome = { ...result, stdout, stderr };
   if (result.error) {
+    if (result.error.code === 'ETIMEDOUT') {
+      const seconds = Math.round(timeout / 1000);
+      const message = `${command} ${args.join(' ')} timed out after ${seconds}s`;
+      if (!options.allowFailure) throw new Error(message);
+      warn(message);
+      return outcome;
+    }
     if (options.allowFailure) return outcome;
     throw result.error;
   }
@@ -149,7 +90,7 @@ function execute(command, args, options = {}) {
 }
 
 function git(repo, args, options = {}) {
-  return execute('git', args, { ...options, cwd: repo });
+  return execute('git', args, { timeout: GIT_TIMEOUT_MS, ...options, cwd: repo });
 }
 
 function gitText(repo, args, options = {}) {
@@ -697,11 +638,112 @@ async function main() {
   else await runPrReport(repo, event, config, binary);
 }
 
-main().catch((error) => {
-  console.error(`::error::chatter-action: ${error.message}`);
-  process.exit(1);
-});
+if (__nccwpck_require__.c[__nccwpck_require__.s] === module) {
+  main().catch((error) => {
+    console.error(`::error::chatter-action: ${error.message}`);
+    process.exit(1);
+  });
+}
 
-module.exports = __webpack_exports__;
+module.exports = { execute, git, gitText, gitLines, GIT_TIMEOUT_MS, EXEC_TIMEOUT_MS };
+
+
+/***/ }),
+
+/***/ 421:
+/***/ ((module) => {
+
+module.exports = require("node:child_process");
+
+/***/ }),
+
+/***/ 24:
+/***/ ((module) => {
+
+module.exports = require("node:fs");
+
+/***/ }),
+
+/***/ 161:
+/***/ ((module) => {
+
+module.exports = require("node:os");
+
+/***/ }),
+
+/***/ 760:
+/***/ ((module) => {
+
+module.exports = require("node:path");
+
+/***/ }),
+
+/***/ 522:
+/***/ ((module) => {
+
+module.exports = require("node:zlib");
+
+/***/ })
+
+/******/ 	});
+/************************************************************************/
+/******/ 	// The module cache
+/******/ 	var __webpack_module_cache__ = {};
+/******/ 	
+/******/ 	// The require function
+/******/ 	function __nccwpck_require__(moduleId) {
+/******/ 		// Check if module is in cache
+/******/ 		var cachedModule = __webpack_module_cache__[moduleId];
+/******/ 		if (cachedModule !== undefined) {
+/******/ 			return cachedModule.exports;
+/******/ 		}
+/******/ 		// Create a new module (and put it into the cache)
+/******/ 		var module = __webpack_module_cache__[moduleId] = {
+/******/ 			id: moduleId,
+/******/ 			loaded: false,
+/******/ 			exports: {}
+/******/ 		};
+/******/ 	
+/******/ 		// Execute the module function
+/******/ 		var threw = true;
+/******/ 		try {
+/******/ 			__webpack_modules__[moduleId](module, module.exports, __nccwpck_require__);
+/******/ 			threw = false;
+/******/ 		} finally {
+/******/ 			if(threw) delete __webpack_module_cache__[moduleId];
+/******/ 		}
+/******/ 	
+/******/ 		// Flag the module as loaded
+/******/ 		module.loaded = true;
+/******/ 	
+/******/ 		// Return the exports of the module
+/******/ 		return module.exports;
+/******/ 	}
+/******/ 	
+/******/ 	// expose the module cache
+/******/ 	__nccwpck_require__.c = __webpack_module_cache__;
+/******/ 	
+/************************************************************************/
+/******/ 	/* webpack/runtime/node module decorator */
+/******/ 	(() => {
+/******/ 		__nccwpck_require__.nmd = (module) => {
+/******/ 			module.paths = [];
+/******/ 			if (!module.children) module.children = [];
+/******/ 			return module;
+/******/ 		};
+/******/ 	})();
+/******/ 	
+/******/ 	/* webpack/runtime/compat */
+/******/ 	
+/******/ 	if (typeof __nccwpck_require__ !== 'undefined') __nccwpck_require__.ab = __dirname + "/";
+/******/ 	
+/************************************************************************/
+/******/ 	
+/******/ 	// module cache are used so entry inlining is disabled
+/******/ 	// startup
+/******/ 	// Load entry module and return exports
+/******/ 	var __webpack_exports__ = __nccwpck_require__(__nccwpck_require__.s = 105);
+/******/ 	module.exports = __webpack_exports__;
+/******/ 	
 /******/ })()
 ;

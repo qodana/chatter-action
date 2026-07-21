@@ -5,6 +5,7 @@
   "scripts": {
     "build": "ncc build src/index.js -o dist",
     "test": "bash test/run-tests.sh",
+    "test:unit": "node --test test/unit/*.test.js",
     "test:github-demo": "bash integration/github-demo/all.sh"
   },
   "devDependencies": {

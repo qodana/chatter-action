@@ -14,6 +14,8 @@ const MAX_DECODED_NOTE_BYTES = 2_000_000;
 const MAX_BRANCH_COMMITS = 200;
 const CHECK_NAME = 'Chatter attribution';
 const MAX_CHECK_SUMMARY_CHARS = 65_000;
+const EXEC_TIMEOUT_MS = 600_000;
+const GIT_TIMEOUT_MS = 60_000;
 
 function log(message) {
   console.log(`chatter-action: ${message}`);
@@ -49,17 +51,26 @@ function appendSummary(text) {
 }
 
 function execute(command, args, options = {}) {
+  const timeout = options.timeout ?? EXEC_TIMEOUT_MS;
   const result = childProcess.spawnSync(command, args, {
     cwd: options.cwd,
     env: options.env || process.env,
     input: options.input,
     encoding: 'utf8',
     maxBuffer: 20 * 1024 * 1024,
+    timeout: timeout,
   });
   const stdout = result.stdout || '';
   const stderr = result.stderr || '';
   const outcome = { ...result, stdout, stderr };
   if (result.error) {
+    if (result.error.code === 'ETIMEDOUT') {
+      const seconds = Math.round(timeout / 1000);
+      const message = `${command} ${args.join(' ')} timed out after ${seconds}s`;
+      if (!options.allowFailure) throw new Error(message);
+      warn(message);
+      return outcome;
+    }
     if (options.allowFailure) return outcome;
     throw result.error;
   }
@@ -71,7 +82,7 @@ function execute(command, args, options = {}) {
 }
 
 function git(repo, args, options = {}) {
-  return execute('git', args, { ...options, cwd: repo });
+  return execute('git', args, { timeout: GIT_TIMEOUT_MS, ...options, cwd: repo });
 }
 
 function gitText(repo, args, options = {}) {
@@ -619,7 +630,11 @@ async function main() {
   else await runPrReport(repo, event, config, binary);
 }
 
-main().catch((error) => {
-  console.error(`::error::chatter-action: ${error.message}`);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(`::error::chatter-action: ${error.message}`);
+    process.exit(1);
+  });
+}
+
+module.exports = { execute, git, gitText, gitLines, GIT_TIMEOUT_MS, EXEC_TIMEOUT_MS };
