@@ -65,7 +65,7 @@ function execute(command, args, options = {}) {
   const outcome = { ...result, stdout, stderr };
   if (result.error) {
     if (result.error.code === 'ETIMEDOUT') {
-      const seconds = Math.round(timeout / 1000);
+      const seconds = Math.ceil(timeout / 1000);
       const message = `${command} ${args.join(' ')} timed out after ${seconds}s`;
       if (!options.allowFailure) throw new Error(message);
       warn(message);
